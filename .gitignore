@@ -122,3 +122,12 @@ dmypy.json
 
 # vscode files
 .vscode
+
+#cocotb artifacts
+sim/csr.csv
+sim/dump.vcd
+sim/dut.v
+sim/results.xml
+sim/*.init
+sim/build
+sim/sim_build
