@@ -22,9 +22,12 @@ from .usbwishbonebridge import USBWishboneBridge
 from .eptri import TriEndpointInterface
 
 
-from litex.soc.interconnect.csr import CSRStorage, CSRStatus, CSRField, CSR
+from litex.soc.interconnect.csr import CSRStorage, CSRStatus, CSRField, CSR, AutoCSR
 
 
+from litex.soc.interconnect.csr_eventmanager import *
+from litex.soc.interconnect import stream
+ 
 
 # Hack the AutoCSR objects to enable access only via Module attributes.
 class CSRTransform(ModuleTransformer):
@@ -32,11 +35,14 @@ class CSRTransform(ModuleTransformer):
         self.parent = parent
 
     def transform_instance(self, i):
+        # Capture all the available CSRs, then burn the bridge.
         v = i.get_csrs()
+        i.get_csrs = None
+        
         for c in v:
             # Skip over modules already exposed, should handle potential renaming here.
-            if hasattr(i, c.name):
-                pass
+            #if hasattr(i, c.name):
+            #    pass
 
             # Attach csr as module attribute
             setattr(i, c.name,c)
@@ -45,11 +51,12 @@ class CSRTransform(ModuleTransformer):
                 ...
             else:
                 # Clear the finalise function so these aren't altered further.
-                def _finalize():
-                    ...            
-                c.finalize = _finalize
+                # Maybe not required?
+                def _null(*kwargs):
+                    ...   
+                c.finalize = _null
 
-                # attach these to our modules submodules,
+                # Attach these to our modules submodules,
                 # needed to ensure the objects are elaborated?
                 self.parent.submodules += c
 
@@ -78,9 +85,10 @@ class CSRTransform(ModuleTransformer):
                         # if the CSRStorage doesn't have any fields, just provide .dat_w
                         setattr(c, "dat_w", Signal(c.size))
                         c.sync += If(c.re, c.storage.eq(c.dat_w))
+
             
 
-class CDCUsb(Module, AutoDoc, ModuleDoc):
+class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
     """DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
@@ -97,7 +105,52 @@ class CDCUsb(Module, AutoDoc, ModuleDoc):
         #usb.finalize()
         self.submodules.eptri = usb = CSRTransform(self)(usb)
 
+        # create interface for UART
+        self._rxtx = CSR(8)
+        self._txfull = CSRStatus()
+        self._rxempty = CSRStatus()
+
+        self.submodules.ev = EventManager()
+        self.ev.tx = EventSourceProcess()
+        self.ev.rx = EventSourceProcess()
+        self.ev.finalize()
+
+        self._tuning_word = CSRStorage(32, reset=0)
         
+
+        self.sink   = stream.Endpoint([("data", 8)])
+        self.source = stream.Endpoint([("data", 8)])
+
+
+        # TX
+        tx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        self.submodules += tx_fifo
+
+        self.comb += [
+            tx_fifo.sink.valid.eq(self._rxtx.re),
+            tx_fifo.sink.data.eq(self._rxtx.r),
+            self._txfull.status.eq(~tx_fifo.sink.ready),
+            tx_fifo.source.connect(self.source),
+            # Generate TX IRQ when tx_fifo becomes non-full
+            self.ev.tx.trigger.eq(~tx_fifo.sink.ready)
+        ]
+
+        # RX
+        rx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        self.submodules += rx_fifo
+
+        self.comb += [
+            self.sink.connect(rx_fifo.sink),
+            self._rxempty.status.eq(~rx_fifo.source.valid),
+            self._rxtx.w.eq(rx_fifo.source.data),
+            rx_fifo.source.ready.eq(self.ev.rx.clear | (False & self._rxtx.we)),
+            # Generate RX IRQ when tx_fifo becomes non-empty
+            self.ev.rx.trigger.eq(~rx_fifo.source.valid)
+        ]
+
+
+
+
         # Ato attach on power up
         self.comb += [
             usb.pullup_out.dat_w.eq(~ResetSignal()),
@@ -270,6 +323,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc):
 
         out_buffer = self.specials.out_buffer = Memory(8, len(mem.contents), init=mem.contents)
         self.specials.out_buffer_rd = out_buffer_rd = out_buffer.get_port(write_capable=False, clock_domain="usb_12")
+        self.autocsr_exclude = ['out_buffer']
 
         # Needs to be able to index Memory
         response_addr = Signal(9)

@@ -4,7 +4,8 @@ from os import environ
 
 import cocotb
 from cocotb.utils import get_sim_time
-from cocotb_usb.harness import get_harness
+from cocotb_tb.harness import get_harness
+from cocotb.result import TestFailure
 from cocotb_usb.device import UsbDevice
 from cocotb_usb.usb.endpoint import EndpointType
 from cocotb_usb.usb.pid import PID
@@ -112,7 +113,7 @@ def test_control_setup_clears_stall(dut):
 
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_enumeration(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -170,7 +171,7 @@ def test_enumeration(dut):
     # TODO: Class-specific config
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_transaction_out(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -199,3 +200,41 @@ def test_transaction_out(dut):
     yield harness.transaction_data_in(DEVICE_ADDRESS,
                                        4,
                                        data)
+
+@cocotb.test()
+def test_csr_write(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Test that CSR is available, even though this doesn't do anything
+    yield harness.write(harness.csrs['uart_tuning_word'], 10)
+    
+    
+
+@cocotb.test()
+def test_csr_read(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Test that CSR is available, even though this doesn't do anything
+    yield harness.write(harness.csrs['uart_tuning_word'], 10)
+    v = yield harness.read(harness.csrs['uart_tuning_word'])
+    if v != 10:
+        raise TestFailure("Failed to update tuning_word")
+    
+
+@cocotb.test()
+def test_uart_tx_usb_rx(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Attempt a write to Transmit a byte out
+    yield harness.write(harness.csrs['uart_rxtx'], 0x41)
+
+    # Expect data comes into the PC
+    #ut._log.info("[Receiving data]")
+    #yield harness.transaction_data_in(0,4, [0x41])
+    

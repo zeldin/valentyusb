@@ -146,7 +146,7 @@ class BaseSoC(SoCCore):
             integrated_rom_size=0x0,
             integrated_sram_size=0x0,
             integrated_main_ram_size=0x0,
-            csr_address_width=14, csr_data_width=8,
+            csr_address_width=14, csr_data_width=32,
             with_uart=False, with_timer=False)
 
         # Add USB pads
@@ -158,13 +158,15 @@ class BaseSoC(SoCCore):
         elif usb_variant == 'epfifo':
             self.submodules.usb = epfifo.PerEndpointFifoInterface(usb_iobuf, debug=True)
         elif usb_variant == 'cdc_eptri':
-            self.submodules.usb = cdc_eptri.CDCUsb(usb_iobuf, debug=True)
+            self.submodules.uart = cdc_eptri.CDCUsb(usb_iobuf, debug=True)
         elif usb_variant == 'dummy':
             self.submodules.usb = dummyusb.DummyUsb(usb_iobuf, debug=True)
         else:
             raise ValueError('Invalid endpoints value. It is currently \'eptri\' and \'dummy\'')
-        if hasattr(self.usb, "debug_bridge"):
+        try:
             self.add_wb_master(self.usb.debug_bridge.wishbone)
+        except AttributeError:
+            pass
 
         #class _WishboneBridge(Module):
         #    def __init__(self, interface):

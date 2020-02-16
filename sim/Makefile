@@ -50,8 +50,9 @@ MODULE=test-cdc-eptri
 
 CUSTOM_COMPILE_DEPS = $(PWD)/dut.v
 
-TARGET_CONFIG=conf/OrangeCrab_cdc_eptri.json
-export TARGET_CONFIG
+export TARGET_CONFIG=conf/OrangeCrab_cdc_eptri.json
+export DUT_CSRS=csr.csv
+
 
 include $(shell cocotb-config --makefiles)/Makefile.inc
 include $(shell cocotb-config --makefiles)/Makefile.sim
