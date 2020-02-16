@@ -236,5 +236,166 @@ def test_uart_tx_usb_rx(dut):
 
     # Expect data comes into the PC
     dut._log.info("[Receiving data]")
-    yield harness.transaction_data_in(0,4, [0x41])
+    yield harness.host_recv(PID.DATA0, 0,2, [0x41])
+
+    
+
+@cocotb.test()
+def test_uart_tx_usb_rx_dual(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Attempt a write to Transmit a byte out
+    yield harness.write(harness.csrs['uart_rxtx'], 0x41)
+
+    # Expect data comes into the PC
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA0, 0,2, [0x41])
+
+    # Attempt a write to Transmit a byte out
+    yield harness.write(harness.csrs['uart_rxtx'], 0x42)
+
+    # Expect data comes into the PC, Note swap from DATA0 to DATA1
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA1, 0,2, [0x42])
+
+
+@cocotb.test()
+def test_uart_tx_usb_rx_small_packet(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Attempt a write to Transmit a byte out
+    yield harness.write(harness.csrs['uart_rxtx'], 0x41)
+    yield harness.write(harness.csrs['uart_rxtx'], 0x42)
+    yield harness.write(harness.csrs['uart_rxtx'], 0x43)
+    yield harness.write(harness.csrs['uart_rxtx'], 0x44)
+
+    # Expect data comes into the PC
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA0, 0,2, [0x41])
+    
+    # Expect data comes into the PC, Note swap from DATA0 to DATA1
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA1, 0,2, [0x42, 0x43, 0x44 ])
+
+    
+
+
+
+@cocotb.test()
+def test_uart_tx_usb_rx_large_packet(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    # Attempt a write to Transmit a byte out
+    for i in range(10):
+        yield harness.write(harness.csrs['uart_rxtx'], i)
+
+    # Expect data comes into the PC
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA0, 0,2, [0])
+    
+    # Expect data comes into the PC, Note swap from DATA0 to DATA1
+    dut._log.info("[Receiving data]")
+    yield harness.host_recv(PID.DATA1, 0,2, [])
+
+
+@cocotb.test()
+def test_usb_tx_uart_rx(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    dut._log.info("[Transmiting data]")
+    yield harness.host_send(PID.DATA0, 0,2, [0x41], PID.ACK)
+    
+    yield harness.wait(10, units="us")
+
+    # Expect data via UART interface
+    v = yield harness.read(harness.csrs['uart_rxtx'])
+    if v != 0x41:
+        raise TestFailure("TX Value != RX Value")
+
+@cocotb.test()
+def test_usb_tx_uart_rx_dual(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    dut._log.info("[Transmiting data]")
+    yield harness.host_send(PID.DATA0, 0,2, [0x41], PID.ACK)
+    
+    yield harness.wait(10, units="us")
+
+    # Expect data via UART interface
+    flag = yield harness.read(harness.csrs['uart_ev_pending'])
+    if (flag & 2) != 2:
+        raise TestFailure(f"uart_ev_pending not set (value:{flag})")
+
+    v = yield harness.read(harness.csrs['uart_rxtx'])
+    if v != 0x41:
+        raise TestFailure("TX Value != RX Value")
+    # clear FLAG
+    yield harness.write(harness.csrs['uart_ev_pending'], 2)
+
+    
+    flag = yield harness.read(harness.csrs['uart_rxempty'])
+    if (flag) != 1:
+        raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
+    
+
+    dut._log.info("[Transmiting data]")
+    yield harness.host_send(PID.DATA1, 0,2, [0x61], PID.ACK)
+    
+    yield harness.wait(10, units="us")
+
+    # Expect data via UART interface
+    flag = yield harness.read(harness.csrs['uart_ev_pending'])
+    if (flag & 2) != 2:
+        raise TestFailure(f"uart_ev_pending not set (value:{flag})")
+
+    v = yield harness.read(harness.csrs['uart_rxtx'])
+    if v != 0x61:
+        raise TestFailure("TX Value != RX Value")
+
+    # clear FLAG
+    yield harness.write(harness.csrs['uart_ev_pending'], 2)
+
+    flag = yield harness.read(harness.csrs['uart_rxempty'])
+    if (flag) != 1:
+        raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
+
+
+@cocotb.test()
+def test_usb_tx_uart_rx_multi(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+    dut._log.info("[Transmiting data]")
+    yield harness.host_send(PID.DATA0, 0,2, [0x41, 0x42, 0x43, 0x44], PID.ACK)
+    
+    yield harness.wait(10, units="us")
+
+    flag = yield harness.read(harness.csrs['uart_ev_pending'])
+    if (flag & 2) != 2:
+        raise TestFailure(f"uart_ev_pending not set (value:{flag})")
+    
+    # Expect data via UART interface
+    for d in [0x41, 0x42, 0x43, 0x44]:
+
+        v = yield harness.read(harness.csrs['uart_rxtx'])
+        if v != d:
+            raise TestFailure("TX Value != RX Value")
+        # clear FLAG
+        yield harness.write(harness.csrs['uart_ev_pending'], 2)
+
+        
+    flag = yield harness.read(harness.csrs['uart_rxempty'])
+    if (flag) != 1:
+        raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
     

@@ -403,7 +403,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
 
 
                 If((usb.out_status.fields.epno == 2) & usb.out_status.fields.pend,
-                    NextState("ECHO")
+                    NextState("DRAIN-RX")
                 )
             ),
 
@@ -419,10 +419,10 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         config.act("FILL-TX",
             usb.in_data.dat_w.data.eq(self.source.data),
 
-            usb.in_data.re.eq(delayed_re),
+            usb.in_data.re.eq(delayed_re & self.source.valid),
             NextValue(delayed_re,0),
 
-            self.source.ready.eq(self.source.valid),
+            self.source.ready.eq(delayed_re & self.source.valid),
 
             If(self.source.valid,
                 NextValue(delayed_re,self.source.valid),
@@ -430,6 +430,29 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
                 usb.in_ctrl.dat_w.epno.eq(2),
                 usb.in_ctrl.re.eq(1),
                 NextState("WAIT-TRANSACTION"),
+            )
+        )
+
+        # OUT data always captures 2 extra bytes from CRC
+        # Since we don't know in advance how long the 
+        # transaction was we need to account for this now
+        data_d2 = Signal(8)
+        re_d2 = Signal()
+
+        self.specials += cdc.MultiReg(usb.out_data.fields.data, data_d2)
+        self.specials += cdc.MultiReg(delayed_re, re_d2)
+        config.act("DRAIN-RX",
+            self.sink.data.eq(data_d2),
+
+            usb.out_data.we.eq(delayed_re & usb.out_status.fields.have),
+            NextValue(delayed_re,0),
+
+            self.sink.valid.eq(re_d2 & usb.out_status.fields.have),
+
+            If(usb.out_status.fields.have,
+                NextValue(delayed_re,usb.out_status.fields.have),
+            ).Else(
+                NextState("IDLE"),
             )
         )
 
@@ -514,18 +537,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             )
         )
 
-        config.act("ECHO",
-            usb.in_data.dat_w.data.eq(usb.out_data.fields.data),
-            #usb.in_data.dat_w.data.eq(0x41),
-            usb.in_data.re.eq(1),
-            usb.out_data.we.eq(1),
-            
-            #If(usb.out_status.fields.have == 0,
-                usb.in_ctrl.dat_w.epno.eq(2),
-                usb.in_ctrl.re.eq(1),
-                NextState("WAIT-TRANSACTION"),
-            #)
-        )
+        
 
 
         self.comb += [
