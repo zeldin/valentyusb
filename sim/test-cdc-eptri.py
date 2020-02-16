@@ -12,6 +12,9 @@ from cocotb_usb.usb.pid import PID
 from cocotb_usb.descriptors import (Descriptor, getDescriptorRequest,
                                     FeatureSelector, USBDeviceRequest,
                                     setFeatureRequest)
+from cocotb_usb.descriptors.cdc import (setLineCoding, setControlLineState,
+                                        getLineCoding, LineCodingStructure)
+
 
 descriptorFile = environ['TARGET_CONFIG']
 model = UsbDevice(descriptorFile)
@@ -60,60 +63,7 @@ def test_control_transfer_in(dut):
                              length=18), model.deviceDescriptor.get())
 
 
-@cocotb.test(skip=True)  # Doesn't set STALL as expected
-def test_control_setup_clears_stall(dut):
-    harness = get_harness(dut)
-    harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
-    yield harness.reset()
-    yield harness.wait(10, units="us")
-
-    yield harness.port_reset(5)
-    yield harness.connect()
-    yield harness.wait(10, units="us")
-    # After waiting (bus inactivity) let's start with SOF
-    yield harness.host_send_sof(0x01)
-
-    addr = 13
-    yield harness.set_device_address(addr)
-    yield harness.set_configuration(1)
-    yield harness.wait(10, units="us")
-
-    epaddr_out = EndpointType.epaddr(0, EndpointType.OUT)
-
-    d = [0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0, 0]
-
-    # send the data -- just to ensure that things are working
-    yield harness.transaction_data_out(addr, epaddr_out, d)
-
-    # send it again to ensure we can re-queue things.
-    yield harness.transaction_data_out(addr, epaddr_out, d)
-
-    # Set endpoint HALT explicitly
-    yield harness.transaction_setup(
-        addr,
-        setFeatureRequest(FeatureSelector.ENDPOINT_HALT,
-                          USBDeviceRequest.Type.ENDPOINT, 0))
-    harness.packet_deadline = get_sim_time("us") + harness.MAX_PACKET_TIME
-    yield harness.transaction_data_in(addr, 0, [])
-    # do another receive, which should fail
-    harness.retry = True
-    harness.packet_deadline = get_sim_time("us") + 1e3  # try for a ms
-    while harness.retry:
-        yield harness.host_send_token_packet(PID.IN, addr, 0)
-        yield harness.host_expect_stall()
-        if get_sim_time("us") > harness.packet_deadline:
-            raise cocotb.result.TestFailure("Did not receive STALL token")
-
-    # do a setup, which should pass
-    yield harness.get_device_descriptor(response=model.deviceDescriptor.get())
-
-    # finally, do one last transfer, which should succeed now
-    # that the endpoint is unstalled.
-    yield harness.get_device_descriptor(response=model.deviceDescriptor.get())
-
-
-
-@cocotb.test(skip=True)
+@cocotb.test()
 def test_enumeration(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -171,35 +121,98 @@ def test_enumeration(dut):
     # TODO: Class-specific config
 
 
-@cocotb.test(skip=True)
-def test_transaction_out(dut):
+
+@cocotb.test()
+def test_basic_cdc_transfer(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
     yield harness.reset()
-    yield harness.connect()
+    yield harness.wait(5, units="us")
 
-    yield harness.wait(10, units="us")
+    dut._log.info("[Enumerating device]")
 
-    DEVICE_ADDRESS = 10
+    DEVICE_ADDRESS = 8
 
     yield harness.port_reset(5)
+    yield harness.connect()
+    yield harness.wait(5, units="us")
+    # After waiting (bus inactivity) let's start with SOF
+    yield harness.host_send_sof(0x01)
+    yield harness.get_device_descriptor(response=model.deviceDescriptor.get())
+
     yield harness.set_device_address(DEVICE_ADDRESS, skip_recovery=True)
+    # There is a longish recovery period after setting address, so let's send
+    # a SOF to make sure DUT doesn't suspend
+    yield harness.host_send_sof(0x02)
+    yield harness.get_configuration_descriptor(
+        length=9,
+        # Device must implement at least one configuration
+        response=model.configDescriptor[1].get()[:9])
 
-    epaddr_in = EndpointType.epaddr(2, EndpointType.IN)
-    data = [ord(i) for i in "ABCD"]
-    epaddr_out = EndpointType.epaddr(1, EndpointType.OUT)
+    total_config_len = model.configDescriptor[1].wTotalLength
+    yield harness.get_configuration_descriptor(
+        length=total_config_len,
+        response=model.configDescriptor[1].get()[:total_config_len])
 
+    yield harness.set_configuration(1)
+    # Device should now be in "Configured" state
+
+    INTERFACE = 1
+    # Values from TinyFPGA-Bootloader ep_rom
+    line_coding = LineCodingStructure(115200,
+                                      LineCodingStructure.STOP_BITS_1,
+                                      LineCodingStructure.PARITY_NONE,
+                                      LineCodingStructure.DATA_BITS_8)
+
+    dut._log.info("[Getting line coding]")
+    yield harness.control_transfer_in(
+            DEVICE_ADDRESS,
+            getLineCoding(INTERFACE),
+            line_coding.get())
+
+    line_coding.dwDTERate = 115200
+    line_coding.bCharFormat = LineCodingStructure.STOP_BITS_1
+    dut._log.info("[Setting line coding]")
+    yield harness.control_transfer_out(
+            DEVICE_ADDRESS,
+            setLineCoding(INTERFACE),
+            line_coding.get())
+
+    dut._log.info("[Setting control line state]")
+    yield harness.control_transfer_out(
+            DEVICE_ADDRESS,
+            setControlLineState(
+                interface=0,
+                rts=0,
+                dtr=0),
+            None)
     
-    dut._log.info("[Sending data]")
-    yield harness.transaction_data_out(DEVICE_ADDRESS,
-                                       2,
-                                       data)
+    dut._log.info("[Setting control line state]")
+    yield harness.control_transfer_out(
+            DEVICE_ADDRESS,
+            setControlLineState(
+                interface=0,
+                rts=1,
+                dtr=0),
+            None)
 
+    dut._log.info("[Setting control line state]")
+    yield harness.control_transfer_out(
+            DEVICE_ADDRESS,
+            setControlLineState(
+                interface=0,
+                rts=0,
+                dtr=1),
+            None)
     
-    dut._log.info("[Receiving data]")
-    yield harness.transaction_data_in(DEVICE_ADDRESS,
-                                       4,
-                                       data)
+    dut._log.info("[Setting control line state]")
+    yield harness.control_transfer_out(
+            DEVICE_ADDRESS,
+            setControlLineState(
+                interface=0,
+                rts=1,
+                dtr=1),
+            None)
 
 @cocotb.test()
 def test_csr_write(dut):

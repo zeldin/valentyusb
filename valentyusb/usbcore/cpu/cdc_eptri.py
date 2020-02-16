@@ -121,6 +121,10 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         self.sink   = stream.Endpoint([("data", 8)])
         self.source = stream.Endpoint([("data", 8)])
 
+        self.rts = Signal()
+        self.dtr = Signal()
+        
+
 
         # TX
         tx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
@@ -318,7 +322,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         mem.add(0x8000, 0x0000, [0, 0]) # Get device status
         mem.add(0x0009, 0x0100, []) # Set configuration 1
 
-        #mem.add(0xA121, 0x0000, [0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08]) # Get line_coding
+        mem.add(0xA121, 0x0000, [0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08]) # Get line_coding
         #mem.add(0xA120, 0x0000, [0x00,0x00]) # SerialState
 
         out_buffer = self.specials.out_buffer = Memory(8, len(mem.contents), init=mem.contents)
@@ -477,13 +481,19 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             
             # Determine which state next 
             If(setup_index == 0xA,
+                # Ack with a blank IN packet
                 usb.in_ctrl.dat_w.epno.eq(0),
                 usb.in_ctrl.re.eq(1),
                 
-                NextState("IDLE"),
+                NextState("WAIT-TRANSACTION"),
                 If(wRequestAndType == 0x0005,
                     # Set Address
                     NextValue(new_address,wValue[8:15]),
+                    NextState("WAIT-TRANSACTION"),
+                ).Elif(wRequestAndType == 0x2122,
+                    # Set Address
+                    NextValue(self.rts,wValue[9]),
+                    NextValue(self.dtr,wValue[8]),
                     NextState("WAIT-TRANSACTION"),
                 ).Elif((usb.setup_status.fields.is_in) & (response_len > 0),
                     NextState("SETUP-IN"),
