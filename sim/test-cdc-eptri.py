@@ -235,6 +235,6 @@ def test_uart_tx_usb_rx(dut):
     yield harness.write(harness.csrs['uart_rxtx'], 0x41)
 
     # Expect data comes into the PC
-    #ut._log.info("[Receiving data]")
-    #yield harness.transaction_data_in(0,4, [0x41])
+    dut._log.info("[Receiving data]")
+    yield harness.transaction_data_in(0,4, [0x41])
     

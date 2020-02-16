@@ -375,8 +375,8 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         )
 
         config.act("WAIT",
-            usb.in_ctrl.dat_w.epno.eq(0),
-            usb.in_ctrl.re.eq(1),
+            #usb.in_ctrl.dat_w.epno.eq(0),
+            #usb.in_ctrl.re.eq(1),
 
             usb.out_ctrl.dat_w.epno.eq(0),
             usb.out_ctrl.dat_w.enable.eq(1),
@@ -405,9 +405,33 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
                 If((usb.out_status.fields.epno == 2) & usb.out_status.fields.pend,
                     NextState("ECHO")
                 )
+            ),
+
+
+
+            # UART_FIFO data?
+            If(self.source.valid,
+                NextState("FILL-TX"),
             )
         )
 
+        delayed_re = Signal()
+        config.act("FILL-TX",
+            usb.in_data.dat_w.data.eq(self.source.data),
+
+            usb.in_data.re.eq(delayed_re),
+            NextValue(delayed_re,0),
+
+            self.source.ready.eq(self.source.valid),
+
+            If(self.source.valid,
+                NextValue(delayed_re,self.source.valid),
+            ).Else(
+                usb.in_ctrl.dat_w.epno.eq(2),
+                usb.in_ctrl.re.eq(1),
+                NextState("WAIT-TRANSACTION"),
+            )
+        )
 
         
 
@@ -430,6 +454,9 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             
             # Determine which state next 
             If(setup_index == 0xA,
+                usb.in_ctrl.dat_w.epno.eq(0),
+                usb.in_ctrl.re.eq(1),
+                
                 NextState("IDLE"),
                 If(wRequestAndType == 0x0005,
                     # Set Address
@@ -447,7 +474,6 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             )
         )
 
-        delayed_re = Signal()
         config.act("SETUP-IN",
             usb.in_data.dat_w.data.eq(out_buffer_rd.dat_r),
 
