@@ -528,7 +528,14 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 )
 
             ).Else(
-                NextState("IDLE"),
+                    NextValue(data_d1, 0),
+                    NextValue(data_d2, 0),
+
+                    NextValue(re_d1, 0),
+                    NextValue(re_d2, 0),
+                    NextValue(delayed_re,0),
+
+                    NextState("IDLE"),
             )
         )
 

@@ -307,7 +307,7 @@ def test_uart_tx_usb_rx_small_packet(dut):
 
 
 
-@cocotb.test(skip=False)
+@cocotb.test(skip=True)
 def test_uart_tx_usb_rx_large_packet(dut):
     harness = get_harness(dut)
     yield harness.reset()
@@ -350,6 +350,60 @@ def test_usb_tx_uart_rx(dut):
         raise TestFailure(f"Value Error: {in_value} != {out_value}")
 
 @cocotb.test(skip=False)
+def test_usb_tx_uart_rx_busy(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
+
+    # fill buffer, statemachine will be busy waiting on FIFO drain
+    dut._log.info("[Transmiting data]")
+    out_value = [i for i in range(10)]
+    yield harness.host_send(PID.DATA0, 0,2, out_value, PID.ACK)
+    
+    # attempt a new OUT, expect NAK
+    yield harness.host_send(PID.DATA1, 0,2, [0x41], PID.NAK)
+
+    yield harness.wait(10, units="us")
+
+    # Expect data via UART interface
+    for d in out_value:
+        in_value = yield harness.read(harness.csrs['uart_rxtx'])
+        yield harness.write(harness.csrs['uart_ev_pending'], 2)
+        if in_value != d:
+            raise TestFailure(f"Value Error: {in_value} != {d}")
+
+
+@cocotb.test(skip=False)
+def test_usb_tx_uart_rx_flood_busy(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
+
+    # fill buffer, statemachine will be busy waiting on FIFO drain
+    dut._log.info("[Transmiting data]")
+    out_value = [i for i in range(5)]
+    for d in out_value:
+        yield harness.host_send(PID.DATA0, 0,2, [d], PID.ACK)
+    
+    # attempt a new OUT, expect NAK
+    yield harness.host_send(PID.DATA1, 0,2, [0x41], PID.NAK)
+
+    yield harness.wait(10, units="us")
+
+    # Expect data via UART interface
+    for d in out_value:
+        in_value = yield harness.read(harness.csrs['uart_rxtx'])
+        yield harness.write(harness.csrs['uart_ev_pending'], 2)
+        if in_value != d:
+            raise TestFailure(f"Value Error: {in_value} != {d}")
+
+@cocotb.test(skip=False)
 def test_usb_tx_uart_rx_dual(dut):
     harness = get_harness(dut)
     yield harness.reset()
@@ -358,8 +412,9 @@ def test_usb_tx_uart_rx_dual(dut):
 
     yield harness.write(harness.csrs['uart_configured'], 0x01)
 
+    out_value = 0x41
     dut._log.info("[Transmiting data]")
-    yield harness.host_send(PID.DATA0, 0,2, [0x41], PID.ACK)
+    yield harness.host_send(PID.DATA0, 0,2, [out_value], PID.ACK)
     
     yield harness.wait(10, units="us")
 
@@ -368,9 +423,9 @@ def test_usb_tx_uart_rx_dual(dut):
     if (flag & 2) != 2:
         raise TestFailure(f"uart_ev_pending not set (value:{flag})")
 
-    v = yield harness.read(harness.csrs['uart_rxtx'])
-    if v != 0x41:
-        raise TestFailure("TX Value != RX Value")
+    in_value = yield harness.read(harness.csrs['uart_rxtx'])
+    if in_value != out_value:
+        raise TestFailure(f"Value Error: {in_value} != {out_value}")
     # clear FLAG
     yield harness.write(harness.csrs['uart_ev_pending'], 2)
 
@@ -379,9 +434,9 @@ def test_usb_tx_uart_rx_dual(dut):
     if (flag) != 1:
         raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
     
-
+    out_value = 0x61
     dut._log.info("[Transmiting data]")
-    yield harness.host_send(PID.DATA1, 0,2, [0x61], PID.ACK)
+    yield harness.host_send(PID.DATA1, 0,2, [out_value], PID.ACK)
     
     yield harness.wait(10, units="us")
 
@@ -390,9 +445,9 @@ def test_usb_tx_uart_rx_dual(dut):
     if (flag & 2) != 2:
         raise TestFailure(f"uart_ev_pending not set (value:{flag})")
 
-    v = yield harness.read(harness.csrs['uart_rxtx'])
-    if v != 0x61:
-        raise TestFailure("TX Value != RX Value")
+    in_value = yield harness.read(harness.csrs['uart_rxtx'])
+    if in_value != out_value:
+        raise TestFailure(f"Value Error: {in_value} != {out_value}")
 
     # clear FLAG
     yield harness.write(harness.csrs['uart_ev_pending'], 2)
