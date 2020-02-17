@@ -48,3 +48,8 @@ class UsbTestCDCUsb(UsbTest):
     def read(self, addr):
         value = yield self.wb.read(addr)
         raise ReturnValue(value)
+    
+    @cocotb.coroutine
+    def host_recv(self, data01, addr, epnum, data, timout=100):
+        self.packet_deadline = get_sim_time("us") + 100
+        yield super().host_recv(data01, addr, epnum, data)

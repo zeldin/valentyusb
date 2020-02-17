@@ -100,10 +100,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         manufacturer="GsD"):
         
 
-        # Create the eptri USB interface
-        usb = TriEndpointInterface(iobuf, debug=debug)
-        #usb.finalize()
-        self.submodules.eptri = usb = CSRTransform(self)(usb)
+        self.submodules.phy = phy = ClockDomainsRenamer("usb_12")(CDCUsbPHY(iobuf, debug=debug, vid=vid, pid=pid, product=product, manufacturer=manufacturer))
 
         # create interface for UART
         self._rxtx = CSR(8)
@@ -117,17 +114,42 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
 
         self._tuning_word = CSRStorage(32, reset=0)
         
+        self._configured = CSR()
 
         self.sink   = stream.Endpoint([("data", 8)])
         self.source = stream.Endpoint([("data", 8)])
 
         self.rts = Signal()
         self.dtr = Signal()
+
+        self.async_rst = Signal()
+
+        self.specials += cdc.MultiReg(phy.rts, self.rts)
+        self.specials += cdc.MultiReg(phy.dtr, self.dtr)
+
+        self.submodules.configure_pulse = cdc.PulseSynchronizer("sys", "usb_12")
         
 
+        self.comb += [
+                #phy.source.connect(self.source),
+                #self.sink.connect(phy.sink),
+
+                self.source.connect(phy.source),
+                phy.sink.connect(self.sink),
+
+                self.async_rst.eq(phy.dtr),
+
+
+                self.configure_pulse.i.eq(self._configured.re),
+                self.phy.configure_set.eq(self.configure_pulse.o),
+
+
+            ]
 
         # TX
-        tx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        tx_fifo = ClockDomainsRenamer({"write":"sys","read":"usb_12"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False))
+        #tx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False)))
+        #tx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += tx_fifo
 
         self.comb += [
@@ -140,7 +162,9 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         ]
 
         # RX
-        rx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        rx_fifo = ClockDomainsRenamer({"write":"usb_12","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False))
+        #rx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False)))
+        #rx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += rx_fifo
 
         self.comb += [
@@ -153,7 +177,29 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         ]
 
 
+class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
+    """DummyUSB Self-Enumerating USB Controller
 
+    This implements a device that simply responds to the most common SETUP packets.
+    It is intended to be used alongside the Wishbone debug bridge.
+    """
+
+    def __init__(self, iobuf, debug, vid, pid,
+        product,
+        manufacturer):
+
+        # Create the eptri USB interface
+        usb = TriEndpointInterface(iobuf, debug=debug)
+        #usb.finalize()
+        self.submodules.eptri = usb = CSRTransform(self)(usb)
+
+
+        self.sink   = stream.Endpoint([("data", 8)])
+        self.source = stream.Endpoint([("data", 8)])
+
+
+        self.rts = Signal()
+        self.dtr = Signal()
 
         # Ato attach on power up
         self.comb += [
@@ -338,6 +384,20 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
 
         new_address = Signal(7)
 
+        configured = Signal()
+        configured_delay = Signal(16, reset=2**16-1)
+
+        self.configure_set = Signal()
+
+        self.sync += [
+            If(self.dtr & (configured_delay > 0), 
+                configured_delay.eq(configured_delay - 1)
+            ).Elif(self.configure_set,
+                configured_delay.eq(0)
+            )
+        ]
+        self.comb += configured.eq(configured_delay == 0)
+
 
         # SETUP packets contain a DATA segment that is always 8 bytes.
         # However, we're only ever interested in the first 4 bytes, plus
@@ -414,7 +474,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
 
 
             # UART_FIFO data?
-            If(self.source.valid,
+            If(self.source.valid & configured,
                 NextState("FILL-TX"),
             )
         )
@@ -440,21 +500,33 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         # OUT data always captures 2 extra bytes from CRC
         # Since we don't know in advance how long the 
         # transaction was we need to account for this now
+        data_d1 = Signal(8)
+        re_d1 = Signal()
+
         data_d2 = Signal(8)
         re_d2 = Signal()
 
-        self.specials += cdc.MultiReg(usb.out_data.fields.data, data_d2)
-        self.specials += cdc.MultiReg(delayed_re, re_d2)
         config.act("DRAIN-RX",
             self.sink.data.eq(data_d2),
 
-            usb.out_data.we.eq(delayed_re & usb.out_status.fields.have),
+            usb.out_data.we.eq(delayed_re & usb.out_status.fields.have & self.sink.ready),
             NextValue(delayed_re,0),
 
-            self.sink.valid.eq(re_d2 & usb.out_status.fields.have),
+            self.sink.valid.eq(re_d2 & usb.out_status.fields.have & self.sink.ready),
 
             If(usb.out_status.fields.have,
+
                 NextValue(delayed_re,usb.out_status.fields.have),
+
+                If(self.sink.ready,
+                    NextValue(data_d1, usb.out_data.fields.data),
+                    NextValue(data_d2, data_d1),
+
+                    NextValue(re_d1, delayed_re),
+                    NextValue(re_d2, re_d1),
+
+                )
+
             ).Else(
                 NextState("IDLE"),
             )

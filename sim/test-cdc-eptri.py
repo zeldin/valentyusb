@@ -20,7 +20,7 @@ descriptorFile = environ['TARGET_CONFIG']
 model = UsbDevice(descriptorFile)
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_control_setup(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -41,7 +41,7 @@ def test_control_setup(dut):
     yield harness.transaction_data_in(0, 0, [])
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_control_transfer_in(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -63,7 +63,7 @@ def test_control_transfer_in(dut):
                              length=18), model.deviceDescriptor.get())
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_enumeration(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -122,7 +122,7 @@ def test_enumeration(dut):
 
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_basic_cdc_transfer(dut):
     harness = get_harness(dut)
     harness.max_packet_size = model.deviceDescriptor.bMaxPacketSize0
@@ -214,7 +214,7 @@ def test_basic_cdc_transfer(dut):
                 dtr=1),
             None)
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_csr_write(dut):
     harness = get_harness(dut)
     yield harness.reset()
@@ -225,7 +225,7 @@ def test_csr_write(dut):
     
     
 
-@cocotb.test()
+@cocotb.test(skip=True)
 def test_csr_read(dut):
     harness = get_harness(dut)
     yield harness.reset()
@@ -238,26 +238,32 @@ def test_csr_read(dut):
         raise TestFailure("Failed to update tuning_word")
     
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_uart_tx_usb_rx(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+    
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     # Attempt a write to Transmit a byte out
     yield harness.write(harness.csrs['uart_rxtx'], 0x41)
 
     # Expect data comes into the PC
     dut._log.info("[Receiving data]")
-    yield harness.host_recv(PID.DATA0, 0,2, [0x41])
+    yield harness.host_recv(PID.DATA0, 0,2, [0x41] )
 
     
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_uart_tx_usb_rx_dual(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     # Attempt a write to Transmit a byte out
     yield harness.write(harness.csrs['uart_rxtx'], 0x41)
@@ -274,11 +280,14 @@ def test_uart_tx_usb_rx_dual(dut):
     yield harness.host_recv(PID.DATA1, 0,2, [0x42])
 
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_uart_tx_usb_rx_small_packet(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     # Attempt a write to Transmit a byte out
     yield harness.write(harness.csrs['uart_rxtx'], 0x41)
@@ -298,11 +307,14 @@ def test_uart_tx_usb_rx_small_packet(dut):
 
 
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_uart_tx_usb_rx_large_packet(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     # Attempt a write to Transmit a byte out
     for i in range(10):
@@ -317,27 +329,34 @@ def test_uart_tx_usb_rx_large_packet(dut):
     yield harness.host_recv(PID.DATA1, 0,2, [])
 
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_usb_tx_uart_rx(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
 
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
+
     dut._log.info("[Transmiting data]")
-    yield harness.host_send(PID.DATA0, 0,2, [0x41], PID.ACK)
+    out_value = 0x41
+    yield harness.host_send(PID.DATA0, 0,2, [out_value], PID.ACK)
     
     yield harness.wait(10, units="us")
 
     # Expect data via UART interface
-    v = yield harness.read(harness.csrs['uart_rxtx'])
-    if v != 0x41:
-        raise TestFailure("TX Value != RX Value")
+    in_value = yield harness.read(harness.csrs['uart_rxtx'])
+    if in_value != out_value:
+        raise TestFailure(f"Value Error: {in_value} != {out_value}")
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_usb_tx_uart_rx_dual(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     dut._log.info("[Transmiting data]")
     yield harness.host_send(PID.DATA0, 0,2, [0x41], PID.ACK)
@@ -383,11 +402,14 @@ def test_usb_tx_uart_rx_dual(dut):
         raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
 
 
-@cocotb.test()
+@cocotb.test(skip=False)
 def test_usb_tx_uart_rx_multi(dut):
     harness = get_harness(dut)
     yield harness.reset()
     yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
 
     dut._log.info("[Transmiting data]")
     yield harness.host_send(PID.DATA0, 0,2, [0x41, 0x42, 0x43, 0x44], PID.ACK)
@@ -400,6 +422,43 @@ def test_usb_tx_uart_rx_multi(dut):
     
     # Expect data via UART interface
     for d in [0x41, 0x42, 0x43, 0x44]:
+
+        v = yield harness.read(harness.csrs['uart_rxtx'])
+        if v != d:
+            raise TestFailure("TX Value != RX Value")
+        # clear FLAG
+        yield harness.write(harness.csrs['uart_ev_pending'], 2)
+
+        
+    flag = yield harness.read(harness.csrs['uart_rxempty'])
+    if (flag) != 1:
+        raise TestFailure(f"uart_rxempty not 1 (value:{flag})")
+    
+
+
+
+@cocotb.test(skip=False)
+def test_usb_tx_uart_rx_large(dut):
+    harness = get_harness(dut)
+    yield harness.reset()
+    yield harness.connect()
+
+
+    yield harness.write(harness.csrs['uart_configured'], 0x01)
+
+    data = [i for i in range(32)]
+
+    dut._log.info("[Transmiting data]")
+    yield harness.host_send(PID.DATA0, 0,2, data, PID.ACK)
+    
+    yield harness.wait(10, units="us")
+
+    flag = yield harness.read(harness.csrs['uart_ev_pending'])
+    if (flag & 2) != 2:
+        raise TestFailure(f"uart_ev_pending not set (value:{flag})")
+    
+    # Expect data via UART interface
+    for d in data:
 
         v = yield harness.read(harness.csrs['uart_rxtx'])
         if v != d:
