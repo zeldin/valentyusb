@@ -35,17 +35,64 @@ class IoBuf(Module):
                 usb_pullup_pin.eq(self.usb_pullup),
             ]
 
+        usb_tx_en = Signal()
+        usb_p_tx = Signal()
+        usb_n_tx = Signal()
+        
+
+        self.sync.usb_48 += [
+             usb_tx_en.eq(self.usb_tx_en),
+        ]
+
+        # Add IO buffers for outputs
+        self.specials += Instance('OFS1P3BX',
+            i_D=self.usb_p_tx,
+            i_SCLK=ClockSignal('usb_48'),
+            i_SP=1,
+            i_PD=0,
+            o_Q=usb_p_tx,
+        )
+        self.specials += Instance('OFS1P3BX',
+            i_D=self.usb_n_tx,
+            i_SCLK=ClockSignal('usb_48'),
+            i_SP=1,
+            i_PD=0,
+            o_Q=usb_n_tx,
+        )
+
+        # Use IO buffers on input
+        usb_p_rx_ = Signal()
+        usb_n_rx_ = Signal()
+        usb_p_t_i = Signal()
+        usb_n_t_i = Signal()
+        self.specials += Instance('IFS1P3BX',
+            i_D=usb_p_t.i,
+            i_SCLK=ClockSignal('usb_48'),
+            i_SP=1,
+            i_PD=0,
+            o_Q=usb_p_rx_,
+        )
+        self.sync.usb_48 += usb_p_t_i.eq(usb_p_rx_)
+        
+        self.specials += Instance('IFS1P3BX',
+            i_D=usb_n_t.i,
+            i_SCLK=ClockSignal('usb_48'),
+            i_SP=1,
+            i_PD=0,
+            o_Q=usb_n_rx_,
+        )
+        self.sync.usb_48 += usb_n_t_i.eq(usb_n_rx_)
+        
+
         #######################################################################
         #######################################################################
         #### Mux the USB +/- pair with the TX and RX paths
         #######################################################################
         #######################################################################
-        usb_p_t_i = Signal()
-        usb_n_t_i = Signal()
-        self.specials += [
-            MultiReg(usb_p_t.i, usb_p_t_i),
-            MultiReg(usb_n_t.i, usb_n_t_i)
-        ]
+        #self.specials += [
+            #MultiReg(usb_p_t.i, usb_p_t_i),
+            #MultiReg(usb_n_t.i, usb_n_t_i)
+        #]
         self.comb += [
             If(self.usb_tx_en,
                 self.usb_p_rx.eq(0b1),
@@ -54,10 +101,10 @@ class IoBuf(Module):
                 self.usb_p_rx.eq(usb_p_t_i),
                 self.usb_n_rx.eq(usb_n_t_i),
             ),
-            usb_p_t.oe.eq(self.usb_tx_en),
-            usb_n_t.oe.eq(self.usb_tx_en),
-            usb_p_t.o.eq(self.usb_p_tx),
-            usb_n_t.o.eq(self.usb_n_tx),
+            usb_p_t.oe.eq(usb_tx_en),
+            usb_n_t.oe.eq(usb_tx_en),
+            usb_p_t.o.eq(usb_p_tx),
+            usb_n_t.o.eq(usb_n_tx),
         ]
 
 
