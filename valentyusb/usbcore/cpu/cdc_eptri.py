@@ -27,7 +27,7 @@ from litex.soc.interconnect.csr import CSRStorage, CSRStatus, CSRField, CSR, Aut
 
 from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.interconnect import stream
- 
+
 
 # Hack the AutoCSR objects to enable access only via Module attributes.
 class CSRTransform(ModuleTransformer):
@@ -38,7 +38,7 @@ class CSRTransform(ModuleTransformer):
         # Capture all the available CSRs, then burn the bridge.
         v = i.get_csrs()
         i.get_csrs = None
-        
+
         for c in v:
             # Skip over modules already exposed, should handle potential renaming here.
             #if hasattr(i, c.name):
@@ -53,7 +53,7 @@ class CSRTransform(ModuleTransformer):
                 # Clear the finalise function so these aren't altered further.
                 # Maybe not required?
                 def _null(*kwargs):
-                    ...   
+                    ...
                 c.finalize = _null
 
                 # Attach these to our modules submodules,
@@ -76,7 +76,7 @@ class CSRTransform(ModuleTransformer):
                         for a in c.fields.fields:
                             s = Signal(a.size,name=f'{c.name}_{a.name}0')
 
-                            c.sync += If(c.re, 
+                            c.sync += If(c.re,
                                 c.storage[a.offset:a.offset + a.size].eq(s)
                             )
                             setattr(c.dat_w, a.name, s)
@@ -86,7 +86,6 @@ class CSRTransform(ModuleTransformer):
                         setattr(c, "dat_w", Signal(c.size))
                         c.sync += If(c.re, c.storage.eq(c.dat_w))
 
-            
 
 class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
     """DummyUSB Self-Enumerating USB Controller
@@ -98,7 +97,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
     def __init__(self, iobuf, debug=False, vid=0x1209, pid=0x5bf2,
         product="OrangeCrab CDC",
         manufacturer="GsD"):
-        
+
 
         self.submodules.phy = phy = ClockDomainsRenamer("usb_12")(CDCUsbPHY(iobuf, debug=debug, vid=vid, pid=pid, product=product, manufacturer=manufacturer))
 
@@ -113,7 +112,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         self.ev.finalize()
 
         self._tuning_word = CSRStorage(32, reset=0)
-        
+
         self._configured = CSR()
 
         self.sink   = stream.Endpoint([("data", 8)])
@@ -128,7 +127,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         self.specials += cdc.MultiReg(phy.dtr, self.dtr)
 
         self.submodules.configure_pulse = cdc.PulseSynchronizer("sys", "usb_12")
-        
+
 
         self.comb += [
                 #phy.source.connect(self.source),
@@ -204,7 +203,7 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
         # Ato attach on power up
         self.comb += [
             usb.pullup_out.dat_w.eq(~ResetSignal()),
-            usb.pullup_out.re.eq(1), 
+            usb.pullup_out.re.eq(1),
         ]
 
         def make_usbstr(s):
@@ -223,8 +222,8 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
             # Config descriptor
             # 80 06 00 02
             0x0002: [
-                0x09, # bLength 
-                0x02, # bDescriptorType 
+                0x09, # bLength
+                0x02, # bDescriptorType
                 62, 0x00, # wTotalLength
                 0x02, # bNumInterfaces
                 0x01, # bConfigurationValue
@@ -233,8 +232,8 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 0x32, # bMaxPower
 
                 # Interface descriptor
-                0x09, # bLength 
-                0x04, # bDescriptorType 
+                0x09, # bLength
+                0x04, # bDescriptorType
                 0x00, # bInterfaceNumber
                 0x00, # bAlternateSetting
                 0x01, # bNumEndpoints
@@ -254,18 +253,18 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 0x24, # bDescriptorType
                 0x02, # bDescriptorSubtype
                 0x02, # bmCapabilities
-                
+
                 # Union Functional Description
                 0x05, # bLength
                 0x24, # bDescriptorType
                 0x06, # bDescriptorSubtype
                 0x00, # bControlInterfoce
                 0x01, # bSubordinateInterface0
-                
+
                 # Control Endpoint Descriptior
                 0x07, # bLength
                 0x05, # bDescriptorType (5: ENDPOINT)
-                0x81, # bEndpointAddress 
+                0x81, # bEndpointAddress
                 0x03, # bmAttributes (XFER_INTERRUPT)
                 0x08, 0x00, # wMaxPacketSize
                 0x40, # bInterval
@@ -279,14 +278,14 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 0x00, # bInterfaceSubClass = 0,
                 0x00, # bInterfaceProtocol = 0,
                 0x00, # iInterface         = 0x00
-            
+
                 0x07, # bLength          = sizeof(tusb_desc_endpoint_t),
                 0x05, # bDescriptorType  = TUSB_DESC_TYPE_ENDPOINT,
                 0x02, # bEndpointAddress = 5,
                 0x02, # bmAttributes     = { .xfer = TUSB_XFER_BULK },
                 0x40, 0x00, # wMaxPacketSize   = 64,
                 0x00, # bInterval        = 0
-            
+
                 0x07, # bLength          = sizeof(tusb_desc_endpoint_t),
                 0x05, # bDescriptorType  = TUSB_DESC_TYPE_ENDPOINT,
                 0x82, # bEndpointAddress = 0x85,
@@ -299,7 +298,7 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
             # 80 06 00 01
             0x0001: [
                 0x12, # Length
-                0x01, # bDescriptorType 
+                0x01, # bDescriptorType
                 0x00, 0x02, # bcdUSB
                 0x02, # bDeviceClass
                 0x00, # bDeviceSubClass
@@ -390,7 +389,7 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
         self.configure_set = Signal()
 
         self.sync += [
-            If(self.dtr & (configured_delay > 0), 
+            If(self.dtr & (configured_delay > 0),
                 configured_delay.eq(configured_delay - 1)
             ).Elif(self.configure_set,
                 configured_delay.eq(0)
@@ -429,12 +428,12 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
             #usb.address.dat_w.eq(new_address),
             usb.address.dat_w.addr.eq(new_address),
             usb.address.re.eq(1),
-            
+
             usb.out_ctrl.dat_w.epno.eq(2),
             usb.out_ctrl.dat_w.enable.eq(1),
             usb.out_ctrl.re.eq(1),
 
-            
+
             NextState("WAIT"),
         )
 
@@ -452,18 +451,18 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 NextValue(setup_index, 0),
                 usb.out_ev_pending.r.eq(1),
                 usb.out_ev_pending.re.eq(1),
-            
+
             ).Elif(usb.out_status.fields.have,
-                
+
             ),
 
 
             # Data RX?
-            If(usb.out_ev_pending.w,
+            If(usb.out_ev_pending.status,
                 usb.out_ev_pending.r.eq(1),
                 usb.out_ev_pending.re.eq(1),
 
-                
+
 
 
                 If((usb.out_status.fields.epno == 2) & usb.out_status.fields.pend,
@@ -498,7 +497,7 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
         )
 
         # OUT data always captures 2 extra bytes from CRC
-        # Since we don't know in advance how long the 
+        # Since we don't know in advance how long the
         # transaction was we need to account for this now
         data_d1 = Signal(8)
         re_d1 = Signal()
@@ -539,10 +538,10 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
             )
         )
 
-        
+
 
         config.act("SETUP",
-           # read out setup packets to determine what to do 
+           # read out setup packets to determine what to do
            If(usb.setup_status.fields.have,
                 NextValue(setup_index,setup_index + 1),
                 Case(setup_index, {
@@ -557,13 +556,13 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 }),
                 usb.setup_data.we.eq(1)
             ),
-            
-            # Determine which state next 
+
+            # Determine which state next
             If(setup_index == 0xA,
                 # Ack with a blank IN packet
                 usb.in_ctrl.dat_w.epno.eq(0),
                 usb.in_ctrl.re.eq(1),
-                
+
                 NextState("WAIT-TRANSACTION"),
                 If(wRequestAndType == 0x0005,
                     # Set Address
@@ -596,7 +595,7 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
                 NextValue(delayed_re,1),
                 NextValue(bytes_addr, bytes_addr + 1),
                 NextValue(bytes_remaining, bytes_remaining - 1),
-            ).Elif(usb.in_ev_pending.w,
+            ).Elif(usb.in_ev_pending.status,
                 NextState("WAIT-TRANSACTION"),
             )
         ),
@@ -604,29 +603,29 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
         config.act("WAIT-TRANSACTION",
 
             usb.out_data.we.eq(1),
-            If(usb.in_ev_pending.w,
+            If(usb.in_ev_pending.status,
                 usb.in_ev_pending.r.eq(1),
                 usb.in_ev_pending.re.eq(1),
-                
-                
+
+
                 NextState("IDLE"),
             )
         )
 
         config.act("WAIT-OUT",
-            If(usb.in_ev_pending.w & usb.out_ev_pending.w,
+            If(usb.in_ev_pending.status & usb.out_ev_pending.status,
                 usb.in_ev_pending.r.eq(1),
                 usb.in_ev_pending.re.eq(1),
 
                 usb.out_ev_pending.r.eq(1),
                 usb.out_ev_pending.re.eq(1),
-                
-                
+
+
                 NextState("IDLE"),
             )
         )
 
-        
+
 
 
         self.comb += [
