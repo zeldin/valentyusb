@@ -176,7 +176,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         ]
 
 
-class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
+class CDCUsbPHY(Module, AutoDoc):
     """DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
