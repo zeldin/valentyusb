@@ -552,6 +552,11 @@ class CDCUsbPHY(Module, AutoDoc):
                     # 4: wIndex.eq(data_recv_payload_delayed),
                     # 5: wIndex.eq(Cat(wIndex[0:8], data_recv_payload_delayed)),
                     6: NextValue(wLength,usb.setup_data.fields.data),
+                    # Windows can and will send SETUP packets to this device with
+                    # wLength > 255. Pretend the request length is 255 in this case
+                    # since we don't ever send packets > 255 back. This avoids
+                    # interpreting wLength as modulo 256.
+                    7: If(usb.setup_data.fields.data > 0, NextValue(wLength, 255))
                     # 7: wLength.eq(Cat(wLength[0:8], data_recv_payload_delayed)),
                 }),
                 usb.setup_data.we.eq(1)
