@@ -20,15 +20,14 @@ from migen.fhdl.structure import ClockSignal, ResetSignal, Replicate, Cat
 
 from litex.build.sim.platform import SimPlatform
 from litex.build.generic_platform import Pins, IOStandard, Misc, Subsignal
-from litex.soc.integration import SoCCore
+from litex.soc.integration.soc_core import SoCCore
 from litex.soc.integration.builder import Builder
-from litex.soc.integration.soc_core import csr_map_update
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect.csr import AutoCSR, CSRStatus, CSRStorage
 
 from valentyusb import usbcore
 from valentyusb.usbcore import io as usbio
-from valentyusb.usbcore.cpu import dummyusb, eptri, epfifo
+from valentyusb.usbcore.cpu import dummyusb, cdc_eptri, eptri, epfifo
 from valentyusb.usbcore.endpoint import EndpointType
 
 import argparse
@@ -147,7 +146,7 @@ class BaseSoC(SoCCore):
             integrated_rom_size=0x0,
             integrated_sram_size=0x0,
             integrated_main_ram_size=0x0,
-            csr_address_width=14, csr_data_width=8,
+            csr_address_width=14, csr_data_width=32,
             with_uart=False, with_timer=False)
 
         # Add USB pads
@@ -158,18 +157,23 @@ class BaseSoC(SoCCore):
             self.submodules.usb = eptri.TriEndpointInterface(usb_iobuf, debug=True)
         elif usb_variant == 'epfifo':
             self.submodules.usb = epfifo.PerEndpointFifoInterface(usb_iobuf, debug=True)
+        elif usb_variant == 'cdc_eptri':
+            self.submodules.uart = cdc_eptri.CDCUsb(usb_iobuf, debug=True)
         elif usb_variant == 'dummy':
             self.submodules.usb = dummyusb.DummyUsb(usb_iobuf, debug=True)
         else:
             raise ValueError('Invalid endpoints value. It is currently \'eptri\' and \'dummy\'')
-        self.add_wb_master(self.usb.debug_bridge.wishbone)
+        try:
+            self.add_wb_master(self.usb.debug_bridge.wishbone)
+        except AttributeError:
+            pass
 
-        class _WishboneBridge(Module):
-            def __init__(self, interface):
-                self.wishbone = interface
+        #class _WishboneBridge(Module):
+        #    def __init__(self, interface):
+        #        self.wishbone = interface
 
-        self.add_cpu(_WishboneBridge(self.platform.request("wishbone")))
-        self.add_wb_master(self.cpu.wishbone)
+        #self.add_cpu(_WishboneBridge(self.platform.request("wishbone")))
+        self.add_wb_master(self.platform.request("wishbone"))
 
 def add_fsm_state_names():
     """Hack the FSM module to add state names to the output"""
@@ -237,7 +241,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Build test file for dummy or eptri module")
     parser.add_argument('variant', metavar='VARIANT',
-                                   choices=['dummy', 'eptri', 'epfifo'],
+                                   choices=['dummy', 'cdc_eptri', 'eptri', 'epfifo'],
                                    default='dummy',
                                    help='USB variant. Choices: [%(choices)s] (default: %(default)s)' )
     parser.add_argument('--dir', metavar='DIRECTORY',

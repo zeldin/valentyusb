@@ -38,23 +38,35 @@ WPWD=$(shell sh -c 'pwd -W')
 PYTHONPATH := $(PWD)/..;$(PYTHONPATH)
 else
 WPWD=$(shell pwd)
-PYTHONPATH := $(PWD)/..:$(PYTHONPATH)
+PYTHONPATH := $(PWD)/..:$(PWD)/../test-suite/usb-test-suite-cocotb-usb:$(PYTHONPATH)
 endif
 
-VERILOG_SOURCES = $(WPWD)/dut.v $(WPWD)/tb.v
+#VERILOG_SOURCES = $(WPWD)/dut.v $(WPWD)/tb.v
+VERILOG_SOURCES = $(WPWD)/dut.v $(WPWD)/cocotb-tb.v
 TOPLEVEL = tb
-MODULE = test-eptri
+#MODULE = test-eptri
+MODULE=test-cdc-eptri
 #MODULE = test-dummyusb
 
 CUSTOM_COMPILE_DEPS = $(PWD)/dut.v
 
+export TARGET_CONFIG=conf/OrangeCrab_cdc_eptri.json
+export DUT_CSRS=csr.csv
+
+
 include $(shell cocotb-config --makefiles)/Makefile.inc
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
-$(PWD)/dut.v: generate_verilog.py ../valentyusb/usbcore/cpu/eptri.py
+#$(PWD)/dut.v: generate_verilog.py ../valentyusb/usbcore/cpu/eptri.py
+#	cd ..
+#	PYTHONPATH=../../litex:../../migen:../../litedram:.. python3 generate_verilog.py eptri
+#	mv build/gateware/dut.v .
+
+$(PWD)/dut.v: generate_verilog.py ../valentyusb/usbcore/cpu/cdc_eptri.py
 	cd ..
-	PYTHONPATH=../../litex:../../migen:../../litedram:.. python3 generate_verilog.py eptri
+	PYTHONPATH=../../litex:../../migen:../../litedram:.. python3 generate_verilog.py cdc_eptri
 	mv build/gateware/dut.v .
+	mv build/gateware/*.init .
 
 #$(PWD)/dut.v: generate_verilog.py ../valentyusb/usbcore/cpu/dummyusb.py
 #	cd ..

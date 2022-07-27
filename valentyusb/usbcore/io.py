@@ -5,6 +5,8 @@ import unittest
 from migen import *
 from migen.genlib.cdc import MultiReg
 
+from litex.build.io import SDRTristate
+
 class Raw(Instance.PreformattedParam):
     def __init__(self, value):
         self.value = value
@@ -24,29 +26,16 @@ class IoBuf(Module):
         self.usb_p_rx_io = Signal()
         self.usb_n_rx_io = Signal()
 
-        usb_p_t = TSTriple()
-        usb_n_t = TSTriple()
-
-        self.specials += usb_p_t.get_tristate(usbp_pin)
-        self.specials += usb_n_t.get_tristate(usbn_pin)
-
         self.usb_pullup = Signal()
         if usb_pullup_pin is not None:
             self.comb += [
                 usb_pullup_pin.eq(self.usb_pullup),
             ]
 
-        #######################################################################
-        #######################################################################
-        #### Mux the USB +/- pair with the TX and RX paths
-        #######################################################################
-        #######################################################################
+
+        # Mux the USB +/- pair with the TX and RX paths.
         usb_p_t_i = Signal()
         usb_n_t_i = Signal()
-        self.specials += [
-            MultiReg(usb_p_t.i, usb_p_t_i),
-            MultiReg(usb_n_t.i, usb_n_t_i)
-        ]
         self.comb += [
             If(self.usb_tx_en,
                 self.usb_p_rx.eq(0b1),
@@ -58,12 +47,23 @@ class IoBuf(Module):
                 self.usb_p_rx.eq(usb_p_t_i),
                 self.usb_n_rx.eq(usb_n_t_i),
             ),
-            usb_p_t.oe.eq(self.usb_tx_en),
-            usb_n_t.oe.eq(self.usb_tx_en),
-            usb_p_t.o.eq(self.usb_p_tx),
-            usb_n_t.o.eq(self.usb_n_tx),
         ]
 
+        # Add Tristate and IO buffers on usb_p
+        self.specials += SDRTristate(
+            io = usbp_pin,
+            o  = self.usb_p_tx,
+            oe = self.usb_tx_en,
+            i  = usb_p_t_i,
+        )
+
+        # Add Tristate and IO buffers on usb_n
+        self.specials += SDRTristate(
+            io = usbn_pin,
+            o  = self.usb_n_tx,
+            oe = self.usb_tx_en,
+            i  = usb_n_t_i,
+        )
 
 class FakeIoBuf(Module):
     def __init__(self):
